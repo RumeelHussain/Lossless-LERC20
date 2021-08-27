@@ -35,11 +35,15 @@ contract LosslessControllerV1 is Initializable, ContextUpgradeable, PausableUpgr
     address public recoveryAdmin;
     address private recoveryAdminCanditate;
     bytes32 private recoveryAdminKeyHash;
+    mapping (address => bool) public isBlackListed;
 
     event AdminChanged(address indexed previousAdmin, address indexed newAdmin);
     event RecoveryAdminChangeProposed(address indexed candidate);
     event RecoveryAdminChanged(address indexed previousAdmin, address indexed newAdmin);
     event PauseAdminChanged(address indexed previousAdmin, address indexed newAdmin);
+    event RemovedBlackList(address _user);
+    event AddedBlackList(address _user);
+
 
     function initialize(address _admin, address _recoveryAdmin, address _pauseAdmin) public initializer {
         admin = _admin;
@@ -100,11 +104,27 @@ contract LosslessControllerV1 is Initializable, ContextUpgradeable, PausableUpgr
         return 1;
     }
 
+    // Blacklisting check should use the already existing modifiers in LER20 and the check
+    // itself should happen in LosslessController.
+    function addBlackList (address _evilUser) public onlyLosslessRecoveryAdmin {
+        isBlackListed[_evilUser] = true;
+        emit AddedBlackList(_evilUser);
+    }
+
+    function removeBlackList (address _clearedUser) public onlyLosslessRecoveryAdmin {
+        isBlackListed[_clearedUser] = false;
+        emit RemovedBlackList(_clearedUser);
+    }
+
     // --- BEFORE HOOKS ---
 
-    function beforeTransfer(address sender, address recipient, uint256 amount) override external {}
+    function beforeTransfer(address sender, address recipient, uint256 amount) override external {
+        require(!isBlackListed[sender], "LosslessController: sender is blacklisted");
+    }
 
-    function beforeTransferFrom(address msgSender, address sender, address recipient, uint256 amount) override external {}
+    function beforeTransferFrom(address msgSender, address sender, address recipient, uint256 amount) override external {
+        require(!isBlackListed[sender], "LosslessController: sender is blacklisted");
+    }
 
     function beforeApprove(address sender, address spender, uint256 amount) override external {}
 

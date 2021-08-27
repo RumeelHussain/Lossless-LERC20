@@ -10,6 +10,7 @@ let lssAdmin;
 let lssRecoveryAdmin;
 let pauseAdmin;
 let anotherAccount;
+let blackListedAccount;
 let token;
 let losslessController;
 let losslessControllerV2;
@@ -116,6 +117,61 @@ function regularERC20() {
           await expect(
             token.connect(initialHolder).transfer(ZERO_ADDRESS, initialBalance),
           ).to.be.revertedWith('LERC20: transfer to the zero address');
+        });
+      });
+
+      describe('blacklisted sender should not be able to send funds', () => {
+        it('blacklisted address transfering funds should revert', async () => {
+          // TRANSFER 10 tokens to blacklist to counter zero balance exception
+          await expect(
+            token.connect(initialHolder).transfer(blackListedAccount.address, 10),
+          )
+            .to.emit(token, 'Transfer')
+            .withArgs(initialHolder.address, blackListedAccount.address, 10);
+
+          // Add blacklist address to LosslessController using recovery admin
+          await expect(
+            losslessController
+              .connect(lssRecoveryAdmin)
+              .addBlackList(
+                blackListedAccount.address,
+              ),
+          )
+            .to.emit(losslessController, 'AddedBlackList')
+            .withArgs(
+              blackListedAccount.address,
+            );
+          // Perform transfer, it should revert
+          await expect(
+            token.connect(blackListedAccount).transfer(recipient.address, 0),
+          ).to.be.revertedWith('LosslessController: sender is blacklisted');
+        });
+
+        it('remove blacklisted address and transfer funds', async () => {
+          // TRANSFER 10 tokens to blacklist to counter zero balance exception
+          await expect(
+            token.connect(initialHolder).transfer(blackListedAccount.address, 10),
+          )
+            .to.emit(token, 'Transfer')
+            .withArgs(initialHolder.address, blackListedAccount.address, 10);
+
+          // Remove blacklist address to LosslessController using recovery admin
+          await expect(
+            losslessController
+              .connect(lssRecoveryAdmin)
+              .removeBlackList(
+                blackListedAccount.address,
+              ),
+          )
+            .to.emit(losslessController, 'RemovedBlackList')
+            .withArgs(
+              blackListedAccount.address,
+            );
+          // Perform transfer, it should revert
+          await expect(
+            token.connect(blackListedAccount).transfer(recipient.address, 0),
+          ).to.emit(token, 'Transfer')
+            .withArgs(blackListedAccount.address, recipient.address, 0);
         });
       });
     });
@@ -276,6 +332,65 @@ function regularERC20() {
                   initialBalance,
                 ),
             ).to.be.revertedWith('LERC20: transfer to the zero address');
+          });
+        });
+
+        describe('Blacklisted address should not transfer', () => {
+          beforeEach(async () => {
+            await token
+              .connect(initialHolder)
+              .approve(recipient.address, initialBalance);
+          });
+
+          it('blacklisted address transfering funds should revert', async () => {
+            // Add blacklist address to LosslessController using recovery admin
+            await expect(
+              losslessController
+                .connect(lssRecoveryAdmin)
+                .addBlackList(
+                  initialHolder.address,
+                ),
+            )
+              .to.emit(losslessController, 'AddedBlackList')
+              .withArgs(
+                initialHolder.address,
+              );
+            // Perform transfer, it should revert
+            await expect(
+              token
+                .connect(recipient)
+                .transferFrom(
+                  initialHolder.address,
+                  recipient.address,
+                  0,
+                ),
+            ).to.be.revertedWith('LosslessController: sender is blacklisted');
+          });
+
+          it('remove blacklisted address and transfer funds', async () => {
+            // Remove blacklist address to LosslessController using recovery admin
+            await expect(
+              losslessController
+                .connect(lssRecoveryAdmin)
+                .removeBlackList(
+                  initialHolder.address,
+                ),
+            )
+              .to.emit(losslessController, 'RemovedBlackList')
+              .withArgs(
+                initialHolder.address,
+              );
+            // Perform transfer, it should revert
+            token
+              .connect(recipient)
+              .transferFrom(
+                initialHolder.address,
+                recipient.address,
+                0,
+              );
+            expect(
+              await token.balanceOf(recipient.address),
+            ).to.be.equal(0);
           });
         });
       });
@@ -902,6 +1017,7 @@ describe('LERC20 WITH LOSSLESS V1', () => {
       pauseAdmin,
       lssAdmin,
       lssRecoveryAdmin,
+      blackListedAccount,
     ] = await ethers.getSigners();
 
     const LosslessController = await ethers.getContractFactory(
